@@ -1,11 +1,24 @@
 package fcm
 
-import "golang.org/x/oauth2/google"
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+
+	"golang.org/x/oauth2/google"
+)
 
 type AndroidConfig struct {
 	Priority string `json:"priority,omitempty"`
 }
 
+type ApnsConfig struct {
+	Headers map[string]string `json:"headers,omitempty"`
+}
 type Notification struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
@@ -15,6 +28,7 @@ type Message struct {
 	Token        string        `json:"token"`
 	Notification Notification  `json:"notification"`
 	Android      AndroidConfig `json:"android,omitempty"`
+	Apns         ApnsConfig    `json:"apns,omitempty"`
 }
 
 type FCMRequest struct {
@@ -22,6 +36,73 @@ type FCMRequest struct {
 }
 
 type Service struct {
-	creds     *google.Credentials
-	projectID string
+	creds       *google.Credentials
+	projectID   string
+	endpointURL string
+}
+
+func NewService(ctx context.Context, credentialsFile string, scopes []string, endpointURL string) (*Service, error) {
+	data, err := os.ReadFile(credentialsFile)
+	if err != nil {
+		return nil, fmt.Errorf("error read credentials file")
+	}
+
+	creds, err := google.CredentialsFromJSON(ctx, data, scopes...)
+	if err != nil {
+		return nil, fmt.Errorf("gagal load credentials: %w", err)
+	}
+
+	return &Service{
+		creds:       creds,
+		projectID:   creds.ProjectID,
+		endpointURL: endpointURL,
+	}, nil
+}
+
+func (s *Service) SendNotification(token string, notification Notification, androidPriority string, apnsHeaders map[string]string) (string, error) {
+
+	tok, err := s.creds.TokenSource.Token()
+	if err != nil {
+		return "", fmt.Errorf("create token failed")
+	}
+	url := fmt.Sprintf(s.endpointURL, s.projectID)
+
+	reqBody := FCMRequest{
+		Message: Message{
+			Token:        token,
+			Notification: notification,
+			Android:      AndroidConfig{Priority: androidPriority},
+			Apns:         ApnsConfig{Headers: apnsHeaders},
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("gagal marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed http request %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error kirim request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("gagal baca response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("FCM error %d: %s", resp.StatusCode, string(body))
+	}
+
+	return string(body), nil
 }

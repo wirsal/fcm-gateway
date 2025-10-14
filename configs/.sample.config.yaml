@@ -1,0 +1,7 @@
+server:
+  port: "8080"
+fcm:
+  credentials_file: "config/service-account.json"
+  scopes:
+    - "https://www.googleapis.com/auth/firebase.messaging"
+    # - "https://www.googleapis.com/auth/datastore"
