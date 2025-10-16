@@ -27,8 +27,10 @@ func main() {
 	apiHandler := api.NewHandler(fcmService)
 
 	router := gin.Default()
+	router.Use(api.SafeHeaderMiddleware())
 	router.GET("/", apiHandler.Welcome)
 	router.POST("/send", apiHandler.SendNotification)
+	router.POST("/sendBroadcast", apiHandler.SendBroadcast)
 
 	log.Printf("Server Gin berjalan di http://localhost:%s", cfg.Server.Port)
 	if err := router.Run(":" + cfg.Server.Port); err != nil {

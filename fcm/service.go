@@ -12,33 +12,11 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-type AndroidConfig struct {
-	Priority string `json:"priority,omitempty"`
-}
-
-type ApnsConfig struct {
-	Headers map[string]string `json:"headers,omitempty"`
-}
-type Notification struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-}
-
-type Message struct {
-	Token        string        `json:"token"`
-	Notification Notification  `json:"notification"`
-	Android      AndroidConfig `json:"android,omitempty"`
-	Apns         ApnsConfig    `json:"apns,omitempty"`
-}
-
-type FCMRequest struct {
-	Message Message `json:"message"`
-}
-
 type Service struct {
 	creds       *google.Credentials
 	projectID   string
 	endpointURL string
+	httpClient  *http.Client
 }
 
 func NewService(ctx context.Context, credentialsFile string, scopes []string, endpointURL string) (*Service, error) {
@@ -56,25 +34,60 @@ func NewService(ctx context.Context, credentialsFile string, scopes []string, en
 		creds:       creds,
 		projectID:   creds.ProjectID,
 		endpointURL: endpointURL,
+		httpClient:  &http.Client{},
 	}, nil
 }
 
-func (s *Service) SendNotification(token string, notification Notification, androidPriority string, apnsHeaders map[string]string) (string, error) {
-
-	tok, err := s.creds.TokenSource.Token()
-	if err != nil {
-		return "", fmt.Errorf("create token failed")
-	}
-	url := fmt.Sprintf(s.endpointURL, s.projectID)
-
+func (s *Service) SendNotification(
+	token string,
+	notification Notification,
+	androidPriority string,
+	apnsHeaders map[string]string,
+	apnsPayload ApnsPayload,
+) (string, error) {
 	reqBody := FCMRequest{
 		Message: Message{
 			Token:        token,
 			Notification: notification,
 			Android:      AndroidConfig{Priority: androidPriority},
-			Apns:         ApnsConfig{Headers: apnsHeaders},
+			Apns: ApnsConfig{
+				Headers: apnsHeaders,
+				Payload: apnsPayload},
 		},
 	}
+	return sendToFirebase(s, reqBody)
+}
+
+func (s *Service) BroadcastNotification(
+	condition string,
+	notification Notification,
+	data map[string]string, // Argument baru
+	androidPriority string,
+	apnsHeaders map[string]string,
+	apnsPayload ApnsPayload,
+) (string, error) {
+	reqBody := FCMBroadcastRequest{ // Menggunakan struct request yang baru
+		Message: BroadcastMessage{
+			Condition:    condition,
+			Notification: notification,
+			Data:         data, // Sertakan Data
+			Android:      AndroidConfig{Priority: androidPriority},
+			Apns: ApnsConfig{
+				Headers: apnsHeaders,
+				Payload: apnsPayload,
+			},
+		},
+	}
+
+	return sendToFirebase(s, reqBody)
+}
+
+func sendToFirebase(s *Service, reqBody interface{}) (string, error) {
+	tok, err := s.creds.TokenSource.Token()
+	if err != nil {
+		return "", fmt.Errorf("create token failed")
+	}
+	url := fmt.Sprintf(s.endpointURL, s.projectID)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

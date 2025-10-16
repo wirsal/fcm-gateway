@@ -3,7 +3,9 @@ package config
 import "github.com/spf13/viper"
 
 type ServerConfig struct {
-	Port string `mapstructure:"port"`
+	Port    string `mapstructure:"port"`
+	Name    string `mapstructure:"name"`
+	Version string `mapstructure:"version"`
 }
 
 type FCMConfig struct {
